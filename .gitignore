@@ -1,0 +1,4 @@
+.env
+tinyenv/
+__pycache__/
+*.sqlite3
