@@ -1,6 +1,24 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from user.models import User
 
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Custom JWT Token Serializer returning user metadata during login.
+    """
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+
+        data["is_staff"] = self.user.is_staff
+        data["role"] = getattr(self.user, "role", "student")
+        data["email"] = self.user.email
+        data["first_name"] = self.user.first_name
+        data["last_name"] = self.user.last_name
+        data["is_verified"] = self.user.is_verified
+
+        return data
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -38,14 +56,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         validated_data.pop("confirm_password")
         password = validated_data.pop("password")
 
-        # Explicitly set is_verified to False for new users
         user = User.objects.create_user(
             password=password, is_verified=False, **validated_data
         )
 
-        # Generate the OTP stored in the model
         user.generate_otp()
-
         return user
 
 
@@ -60,6 +75,7 @@ class UserSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "role",
+            "is_staff",
             "gender",
             "dob",
             "guardian_name",
@@ -67,4 +83,4 @@ class UserSerializer(serializers.ModelSerializer):
             "profile_image",
             "is_verified",
         ]
-        read_only_fields = ["id", "email", "is_verified"]
+        read_only_fields = ["id", "email", "is_verified", "is_staff"]
