@@ -40,7 +40,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'live_session',
-    'user'
+    'user',
+    'listening'
 ]
 
 # cors headers congig
