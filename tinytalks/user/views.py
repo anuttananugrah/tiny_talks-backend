@@ -8,7 +8,7 @@ from user.models import User
 from .serializers import (
     UserRegistrationSerializer,
     UserSerializer,
-    CustomTokenObtainPairSerializer,
+    CustomTokenObtainPairSerializer, StudentListSerializer
 )
 
 
@@ -146,3 +146,13 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+class IsStaffUser(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
+
+class TeacherStudentListView(generics.ListAPIView):
+    """React Dashboard: See all registered students."""
+    queryset = User.objects.filter(is_staff=False).order_by('-date_joined')
+    serializer_class = StudentListSerializer
+    permission_classes = [IsStaffUser]

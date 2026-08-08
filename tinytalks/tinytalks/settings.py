@@ -41,7 +41,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'live_session',
     'user',
-    'listening'
+    'listening_session'
 ]
 
 # cors headers congig

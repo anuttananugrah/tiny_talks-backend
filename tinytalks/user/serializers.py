@@ -84,3 +84,8 @@ class UserSerializer(serializers.ModelSerializer):
             "is_verified",
         ]
         read_only_fields = ["id", "email", "is_verified", "is_staff"]
+
+class StudentListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'date_joined']
