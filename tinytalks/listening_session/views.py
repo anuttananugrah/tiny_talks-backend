@@ -148,14 +148,21 @@ class TeacherQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
 # 3. View Student Results
 class TeacherQuizResultListView(generics.ListAPIView):
     """React Dashboard: See all student quiz attempts and scores."""
-    queryset = QuizAttempt.objects.all().order_by('-created_at')
+    queryset = (
+        QuizAttempt.objects
+        .select_related('user', 'video')
+        .prefetch_related('answers__question')
+        .order_by('-created_at')
+    )
     serializer_class = TeacherQuizAttemptSerializer
     permission_classes = [IsStaffUser]
-    
-    # Optional: Filter by specific video if passed in URL
+
     def get_queryset(self):
         queryset = super().get_queryset()
         video_id = self.request.query_params.get('video_id')
+        student_id = self.request.query_params.get('student_id')
         if video_id:
             queryset = queryset.filter(video_id=video_id)
+        if student_id:
+            queryset = queryset.filter(user_id=student_id)
         return queryset

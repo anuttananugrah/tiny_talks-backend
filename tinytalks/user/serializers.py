@@ -88,4 +88,8 @@ class UserSerializer(serializers.ModelSerializer):
 class StudentListSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'date_joined']
+        fields = [
+            'id', 'email', 'first_name', 'last_name',
+            'contact_number', 'guardian_name', 'gender', 'dob',
+            'profile_image', 'date_joined',
+        ]

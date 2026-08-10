@@ -1,3 +1,4 @@
+from user.serializers import StudentListSerializer
 from .models import UserAnswer # Make sure to import this at the top
 from rest_framework import serializers
 from .models import StoryVideo, StoryQuestion, QuizAttempt, UserAnswer
@@ -44,11 +45,12 @@ class TeacherUserAnswerSerializer(serializers.ModelSerializer):
         model = UserAnswer
         fields = ['id', 'question_text', 'selected_option', 'correct_option', 'is_correct']
 
+
 class TeacherQuizAttemptSerializer(serializers.ModelSerializer):
-    user_email = serializers.EmailField(source='user.email', read_only=True)
+    student = StudentListSerializer(source='user', read_only=True)
     video_title = serializers.CharField(source='video.title', read_only=True)
     answers = TeacherUserAnswerSerializer(many=True, read_only=True)
 
     class Meta:
         model = QuizAttempt
-        fields = ['id', 'user_email', 'video_title', 'score', 'attempt_date', 'created_at', 'answers']
+        fields = ['id', 'student', 'video_title', 'score', 'attempt_date', 'created_at', 'answers']
