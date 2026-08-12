@@ -1,5 +1,7 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser,BaseUserManager
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.core.mail import send_mail
+from django.conf import settings
 from random import randint
 # Create your models here.
 
@@ -56,9 +58,23 @@ class User(AbstractUser):
     is_verified=models.BooleanField(default=True)
     otp=models.CharField(max_length=10,null=True,blank=True)
     def generate_otp(self):
-        otp_number=str(randint(1000,9000))+str(self.id)
-        self.otp=otp_number
+        otp_number = str(randint(1000, 9000)) + str(self.id)
+        self.otp = otp_number
         self.save()
+        
+        # Send OTP email
+        subject = "Your Verification Code - Tiny Talks"
+        message = f"Hello {self.first_name},\n\nYour secret verification code is: {self.otp}\n\nLet's keep making English a Happy Habit! 🐰"
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [self.email],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Failed to send email: {e}")
     # Set email as the main identifier for authentication
     USERNAME_FIELD = 'email'
     
