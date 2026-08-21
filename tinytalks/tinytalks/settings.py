@@ -24,8 +24,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -73,8 +73,13 @@ AUTH_USER_MODEL = "user.User"
 CORS_ALLOWED_ORIGINS = [
     "https://tiny-talks-frontend.vercel.app",
     "http://localhost:5173",
-      "http://127.0.0.1:5173"
-      ]
+    "http://127.0.0.1:5173",
+]
+
+# This allows all Vercel preview URLs automatically
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.vercel\.app$",
+]
 
 CSRF_TRUSTED_ORIGINS = []
 if FRONTEND_URL:
