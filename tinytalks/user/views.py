@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 from django.contrib.auth import authenticate
+from django.core.exceptions import ValidationError as DjangoValidationError
 from user.models import User
 from .serializers import (
     UserRegistrationSerializer,
@@ -215,7 +216,7 @@ class VerifyResetOTPView(APIView):
             else:
                 return Response({"error": "Invalid OTP. Please try again."}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
-            return Response({"error": "User with this email does not exist."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "Invalid OTP. Please try again."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ResetPasswordView(APIView):
@@ -239,7 +240,10 @@ class ResetPasswordView(APIView):
             user = User.objects.get(email=email)
             if user.verify_otp(otp):
                 from django.contrib.auth.password_validation import validate_password
-                validate_password(new_password, user=user)
+                try:
+                    validate_password(new_password, user=user)
+                except DjangoValidationError as exc:
+                    return Response({"error": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
                 user.set_password(new_password)
                 user.save(update_fields=["password"])
                 user.clear_otp()
@@ -247,4 +251,4 @@ class ResetPasswordView(APIView):
             else:
                 return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
-            return Response({"error": "User with this email does not exist."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "Invalid OTP or email."}, status=status.HTTP_400_BAD_REQUEST)

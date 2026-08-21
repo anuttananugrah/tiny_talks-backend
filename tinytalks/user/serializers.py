@@ -93,7 +93,12 @@ class UserSerializer(serializers.ModelSerializer):
             "profile_image",
             "is_verified",
         ]
-        read_only_fields = ["id", "email", "is_verified", "is_staff"]
+        read_only_fields = ["id", "email", "role", "is_verified", "is_staff"]
+
+    def validate_profile_image(self, value):
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("Profile images must be 5 MB or smaller.")
+        return value
 
 class StudentListSerializer(serializers.ModelSerializer):
     class Meta:
