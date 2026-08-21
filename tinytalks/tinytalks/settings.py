@@ -70,7 +70,12 @@ STORAGES = {
 }
 AUTH_USER_MODEL = "user.User"
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CORS_ALLOWED_ORIGINS = [
+    "https://tiny-talks-frontend.vercel.app",
+    "http://localhost:5173",
+      "http://127.0.0.1:5173"
+      ]
+
 CSRF_TRUSTED_ORIGINS = []
 if FRONTEND_URL:
     CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
