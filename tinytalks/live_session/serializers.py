@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import LiveClass
+from listening_session.serializers import validate_image_upload
 
 
 class LiveClassSerializer(serializers.ModelSerializer):
@@ -27,3 +28,6 @@ class LiveClassSerializer(serializers.ModelSerializer):
 
     def get_formatted_time(self, obj):
         return obj.class_time.strftime("%I:%M %p").lstrip('0')
+
+    def validate_thumbnail(self, value):
+        return validate_image_upload(value)

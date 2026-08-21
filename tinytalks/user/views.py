@@ -3,6 +3,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import status, generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from django.contrib.auth import authenticate
 from user.models import User
 from .serializers import (
@@ -18,24 +19,20 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
     serializer_class = UserRegistrationSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "otp"
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        refresh = RefreshToken.for_user(user)
-
         return Response(
             {
-                "message": "User registered successfully.",
+                "message": "User registered successfully. Check your email for the verification code.",
                 "user": UserSerializer(
                     user, context=self.get_serializer_context()
                 ).data,
-                "tokens": {
-                    "refresh": str(refresh),
-                    "access": str(refresh.access_token),
-                },
             },
             status=status.HTTP_201_CREATED,
         )
@@ -45,6 +42,8 @@ class VerifyOTPView(APIView):
     """API endpoint to verify the email OTP."""
 
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "otp"
 
     def post(self, request):
         email = request.data.get("email")
@@ -70,10 +69,10 @@ class VerifyOTPView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if user.otp == str(otp):
+        if user.verify_otp(otp):
             user.is_verified = True
-            user.otp = None  # Clear OTP after successful verification
-            user.save()
+            user.save(update_fields=["is_verified"])
+            user.clear_otp()
 
             refresh = RefreshToken.for_user(user)
 
@@ -95,10 +94,31 @@ class VerifyOTPView(APIView):
         )
 
 
+class ResendOTPView(APIView):
+    """Issue a fresh verification code without revealing account details."""
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "otp"
+
+    def post(self, request):
+        email = request.data.get("email")
+        if email:
+            try:
+                user = User.objects.get(email=email)
+                if not user.is_verified:
+                    user.generate_otp()
+            except User.DoesNotExist:
+                pass
+        return Response({"message": "If an unverified account exists, a new code has been sent."})
+
+
 class LoginView(APIView):
     """API endpoint to authenticate user and return JWT tokens & user staff status."""
 
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     def post(self, request):
         email = request.data.get("email")
@@ -112,7 +132,7 @@ class LoginView(APIView):
 
         user = authenticate(request, email=email, password=password)
 
-        if user is not None:
+        if user is not None and user.is_verified:
             refresh = RefreshToken.for_user(user)
             return Response(
                 {
@@ -160,6 +180,8 @@ class TeacherStudentListView(generics.ListAPIView):
 
 class ForgotPasswordView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
 
     def post(self, request):
         email = request.data.get("email")
@@ -169,15 +191,15 @@ class ForgotPasswordView(APIView):
         try:
             user = User.objects.get(email=email)
             user.generate_otp()
-            # To simulate sending email for development:
-            print(f"--- OTP for Forgot Password: {user.otp} ---")
-            return Response({"message": "OTP generated and sent successfully."}, status=status.HTTP_200_OK)
+            return Response({"message": "If an account exists, a reset code has been sent."}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
-            return Response({"error": "User with this email does not exist."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"message": "If an account exists, a reset code has been sent."}, status=status.HTTP_200_OK)
 
 
 class VerifyResetOTPView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
 
     def post(self, request):
         email = request.data.get("email")
@@ -188,7 +210,7 @@ class VerifyResetOTPView(APIView):
 
         try:
             user = User.objects.get(email=email)
-            if user.otp == str(otp):
+            if user.verify_otp(otp):
                 return Response({"message": "OTP verified successfully."}, status=status.HTTP_200_OK)
             else:
                 return Response({"error": "Invalid OTP. Please try again."}, status=status.HTTP_400_BAD_REQUEST)
@@ -198,6 +220,8 @@ class VerifyResetOTPView(APIView):
 
 class ResetPasswordView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
 
     def post(self, request):
         email = request.data.get("email")
@@ -213,10 +237,12 @@ class ResetPasswordView(APIView):
 
         try:
             user = User.objects.get(email=email)
-            if user.otp == str(otp):
+            if user.verify_otp(otp):
+                from django.contrib.auth.password_validation import validate_password
+                validate_password(new_password, user=user)
                 user.set_password(new_password)
-                user.otp = None
-                user.save()
+                user.save(update_fields=["password"])
+                user.clear_otp()
                 return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
             else:
                 return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)

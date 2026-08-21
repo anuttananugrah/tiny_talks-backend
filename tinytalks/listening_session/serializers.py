@@ -3,6 +3,22 @@ from .models import UserAnswer # Make sure to import this at the top
 from rest_framework import serializers
 from .models import StoryVideo, StoryQuestion, QuizAttempt, UserAnswer
 
+MAX_IMAGE_SIZE = 5 * 1024 * 1024
+MAX_VIDEO_SIZE = 50 * 1024 * 1024
+
+
+def validate_image_upload(value):
+    if value.size > MAX_IMAGE_SIZE:
+        raise serializers.ValidationError("Images must be 5 MB or smaller.")
+    return value
+
+
+def validate_video_upload(value):
+    extension = "." + value.name.rsplit(".", 1)[-1].lower() if "." in value.name else ""
+    if extension not in {".mp4", ".webm"} or value.size > MAX_VIDEO_SIZE:
+        raise serializers.ValidationError("Upload an MP4 or WebM video no larger than 50 MB.")
+    return value
+
 class StoryQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoryQuestion
@@ -36,6 +52,12 @@ class TeacherStoryVideoSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoryVideo
         fields = ['id', 'title', 'description', 'video_url', 'video_file', 'thumbnail', 'created_at', 'questions']
+
+    def validate_video_file(self, value):
+        return validate_video_upload(value)
+
+    def validate_thumbnail(self, value):
+        return validate_image_upload(value)
 
 class TeacherUserAnswerSerializer(serializers.ModelSerializer):
     question_text = serializers.CharField(source='question.question_text', read_only=True)

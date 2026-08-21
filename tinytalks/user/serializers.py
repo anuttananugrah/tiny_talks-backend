@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth.password_validation import validate_password
+from rest_framework.exceptions import AuthenticationFailed
 from user.models import User
 
 
@@ -10,6 +12,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
+
+        if not self.user.is_verified:
+            raise AuthenticationFailed("Please verify your email before signing in.")
 
         data["is_staff"] = self.user.is_staff
         data["role"] = getattr(self.user, "role", "student")
@@ -36,7 +41,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             "email",
             "first_name",
             "last_name",
-            "role",
             "gender",
             "dob",
             "guardian_name",
@@ -50,6 +54,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"password": "Password fields do not match."}
             )
+        user = User(
+            email=attrs.get("email", ""),
+            first_name=attrs.get("first_name", ""),
+            last_name=attrs.get("last_name", ""),
+        )
+        validate_password(attrs["password"], user=user)
         return attrs
 
     def create(self, validated_data):
