@@ -10,9 +10,11 @@ SECRET_KEY = config("SECRET_KEY")
 DEBUG = config("DEBUG", default=False, cast=bool)
 FRONTEND_URL = config("FRONTEND_URL", default="").rstrip("/")
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+raw_allowed = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver")
+ALLOWED_HOSTS = [h.strip() for h in raw_allowed.split(",") if h.strip()]
 if render_host := os.environ.get("RENDER_EXTERNAL_HOSTNAME"):
-    ALLOWED_HOSTS.append(render_host)
+    if render_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(render_host)
 
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",

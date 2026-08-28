@@ -1,5 +1,4 @@
 from user.serializers import StudentListSerializer
-from .models import UserAnswer # Make sure to import this at the top
 from rest_framework import serializers
 from .models import StoryVideo, StoryQuestion, QuizAttempt, UserAnswer
 
@@ -19,11 +18,13 @@ def validate_video_upload(value):
         raise serializers.ValidationError("Upload an MP4 or WebM video no larger than 50 MB.")
     return value
 
+
 class StoryQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoryQuestion
         # Notice 'correct_option' is EXCLUDED so users cannot cheat!
         fields = ['id', 'question_text', 'option_1', 'option_2', 'option_3', 'option_4']
+
 
 class StoryVideoSerializer(serializers.ModelSerializer):
     # This nests the questions inside the video response
@@ -32,6 +33,7 @@ class StoryVideoSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoryVideo
         fields = ['id', 'title', 'description', 'video_url', 'video_file', 'thumbnail', 'created_at', 'questions']
+
 
 class QuizAttemptSerializer(serializers.ModelSerializer):
     class Meta:
@@ -45,6 +47,8 @@ class TeacherStoryQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoryQuestion
         fields = '__all__' # Teachers need to see and edit the correct_option!
+        read_only_fields = ['video']
+
 
 class TeacherStoryVideoSerializer(serializers.ModelSerializer):
     questions = TeacherStoryQuestionSerializer(many=True, read_only=True)
@@ -58,6 +62,7 @@ class TeacherStoryVideoSerializer(serializers.ModelSerializer):
 
     def validate_thumbnail(self, value):
         return validate_image_upload(value)
+
 
 class TeacherUserAnswerSerializer(serializers.ModelSerializer):
     question_text = serializers.CharField(source='question.question_text', read_only=True)

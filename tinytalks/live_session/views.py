@@ -37,6 +37,27 @@ class TeacherLiveClassListCreateView(generics.ListCreateAPIView):
     serializer_class = LiveClassSerializer
     permission_classes = [IsTeacherOrStaffUser]
 
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        try:
+            from user.models import Notification
+            teacher = instance.teacher_name or (
+                f"{self.request.user.first_name} {self.request.user.last_name}".strip()
+                if self.request.user.is_authenticated else "Teacher"
+            )
+            time_str = instance.class_time.strftime("%I:%M %p") if hasattr(instance.class_time, "strftime") else str(instance.class_time)
+            Notification.objects.create(
+                title=f"🎥 New Live Class: {instance.title}",
+                message=f"Live class '{instance.lesson or instance.title}' is scheduled for {instance.class_date} at {time_str}.",
+                notification_type="class",
+                teacher_name=teacher or "Teacher",
+                link="/live-class",
+                created_by=self.request.user if self.request.user.is_authenticated else None,
+            )
+        except Exception:
+            pass
+
+
 class TeacherLiveClassDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Teacher endpoint to edit or delete a class."""
     queryset = LiveClass.objects.all()

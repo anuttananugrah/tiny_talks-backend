@@ -84,3 +84,41 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.first_name} ({self.email})"
+
+
+class Notification(models.Model):
+    NOTIFICATION_TYPES = (
+        ("class", "Live Class"),
+        ("listening", "Listening Session"),
+        ("reading", "Reading Story"),
+        ("announcement", "Announcement"),
+        ("awareness", "Awareness / Tip"),
+        ("update", "Update"),
+    )
+
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, default="announcement")
+    teacher_name = models.CharField(max_length=120, blank=True, null=True, help_text="Name of the teacher who added this notification or session")
+    link = models.CharField(max_length=255, blank=True, null=True, help_text="Destination route, e.g. /live-class or /listening or /reading")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_notifications",
+    )
+    read_by = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="read_notifications",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Notification"
+        verbose_name_plural = "Notifications"
+
+    def __str__(self):
+        return f"[{self.notification_type}] {self.title} (by {self.teacher_name or 'Teacher'})"

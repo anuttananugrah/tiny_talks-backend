@@ -1,3 +1,9 @@
+import secrets
+from django.utils import timezone
+from django.core.mail import send_mail
+from django.conf import settings
+from django.contrib.auth.hashers import make_password
+from django.shortcuts import get_object_or_404
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import status, generics, permissions
@@ -6,11 +12,12 @@ from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError as DjangoValidationError
-from user.models import User
+from user.models import User, Notification
 from .serializers import (
     UserRegistrationSerializer,
     UserSerializer,
-    CustomTokenObtainPairSerializer, StudentListSerializer
+    CustomTokenObtainPairSerializer, StudentListSerializer,
+    NotificationSerializer, NotificationCreateSerializer
 )
 
 
@@ -135,16 +142,22 @@ class LoginView(APIView):
 
         if user is not None and user.is_verified:
             refresh = RefreshToken.for_user(user)
+            userData = UserSerializer(user).data
             return Response(
                 {
                     "message": "Login successful.",
                     "is_staff": user.is_staff,
                     "role": getattr(user, "role", "student"),
-                    "user": UserSerializer(user).data,
+                    "first_name": user.first_name or "",
+                    "last_name": user.last_name or "",
+                    "email": user.email,
+                    "access": str(refresh.access_token),
+                    "refresh": str(refresh),
                     "tokens": {
                         "refresh": str(refresh),
                         "access": str(refresh.access_token),
                     },
+                    "user": userData,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -191,9 +204,11 @@ class IsTeacherOrStaffUser(permissions.BasePermission):
 
 class TeacherStudentListView(generics.ListAPIView):
     """React Dashboard: See all registered students."""
-    queryset = User.objects.filter(is_staff=False).order_by('-date_joined')
     serializer_class = StudentListSerializer
     permission_classes = [IsTeacherOrStaffUser]
+
+    def get_queryset(self):
+        return User.objects.filter(is_staff=False).exclude(role__iexact="Teacher").exclude(role__iexact="Admin").order_by("-date_joined")
 
 
 class ForgotPasswordView(APIView):
@@ -295,3 +310,207 @@ class ResetPasswordView(APIView):
         user.save(update_fields=["password"])
         user.clear_otp()
         return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
+
+
+# ============================================================
+# 🔔 NOTIFICATIONS VIEWS (Students & Teachers)
+# ============================================================
+
+class NotificationListView(APIView):
+    """
+    Authenticated Student/User endpoint to get the latest notifications.
+    Includes an unread counter for the logged-in user.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        queryset = Notification.objects.all().order_by("-created_at")[:50]
+        unread_count = Notification.objects.exclude(read_by=request.user).count()
+
+        serializer = NotificationSerializer(queryset, many=True, context={"request": request})
+        return Response({
+            "results": serializer.data,
+            "unread_count": unread_count,
+        }, status=status.HTTP_200_OK)
+
+
+
+class NotificationMarkReadView(APIView):
+    """
+    Endpoint for an authenticated student to mark a single notification as read.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        notification = get_object_or_404(Notification, pk=pk)
+        notification.read_by.add(request.user)
+        return Response({"message": "Notification marked as read."}, status=status.HTTP_200_OK)
+
+
+class NotificationMarkAllReadView(APIView):
+    """
+    Endpoint for an authenticated student to mark all notifications as read.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        unread = Notification.objects.exclude(read_by=request.user)
+        for n in unread:
+            n.read_by.add(request.user)
+        return Response({"message": "All notifications marked as read."}, status=status.HTTP_200_OK)
+
+
+class TeacherNotificationListCreateView(generics.ListCreateAPIView):
+    """
+    Teacher/Staff endpoint to view all notifications or broadcast a new announcement/awareness notification.
+    """
+    queryset = Notification.objects.all().order_by("-created_at")
+    serializer_class = NotificationSerializer
+    permission_classes = [IsTeacherOrStaffUser]
+
+    def perform_create(self, serializer):
+        teacher_name = self.request.data.get("teacher_name")
+        if not teacher_name and self.request.user.is_authenticated:
+            full_name = f"{self.request.user.first_name} {self.request.user.last_name}".strip()
+            teacher_name = full_name or self.request.user.email
+        serializer.save(
+            created_by=self.request.user if self.request.user.is_authenticated else None,
+            teacher_name=teacher_name or "Teacher",
+        )
+
+
+class TeacherNotificationDetailView(generics.RetrieveDestroyAPIView):
+    """
+    Teacher/Staff endpoint to view or delete a notification.
+    """
+    queryset = Notification.objects.all()
+    serializer_class = NotificationSerializer
+    permission_classes = [IsTeacherOrStaffUser]
+
+
+# ============================================================
+# 🔒 SECURITY CREDENTIAL MANAGEMENT (With OTP Verification)
+# ============================================================
+
+class SecurityRequestOTPView(APIView):
+    """
+    Authenticated endpoint to request an OTP before altering security credentials
+    (Change Password, Change Email, Change Phone Number).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        action = request.data.get("action")  # 'change_password', 'change_email', 'change_phone'
+        target_value = (request.data.get("target_value") or "").strip()
+
+        if action not in ["change_password", "change_email", "change_phone"]:
+            return Response({"error": "Invalid security action requested."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+
+        if action == "change_email":
+            if not target_value or "@" not in target_value:
+                return Response({"error": "Please provide a valid new email address."}, status=status.HTTP_400_BAD_REQUEST)
+            if User.objects.filter(email__iexact=target_value).exclude(pk=user.pk).exists():
+                return Response({"error": "This email address is already in use by another account."}, status=status.HTTP_400_BAD_REQUEST)
+
+            code = f"{secrets.randbelow(900_000) + 100_000:06d}"
+            user.otp = make_password(code)
+            user.otp_created_at = timezone.now()
+            user.otp_attempts = 0
+            user.save(update_fields=["otp", "otp_created_at", "otp_attempts"])
+
+            send_mail(
+                "Your Tiny Talks Email Change Verification Code",
+                f"Hello {user.first_name},\n\nYour OTP code to update your Tiny Talks email address to {target_value} is: {code}\nThis code expires in 10 minutes.",
+                settings.DEFAULT_FROM_EMAIL,
+                [target_value],
+                fail_silently=False,
+            )
+            return Response({"message": f"Verification code sent to {target_value}."}, status=status.HTTP_200_OK)
+
+        elif action == "change_phone":
+            if not target_value:
+                return Response({"error": "Please provide a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
+
+            code = f"{secrets.randbelow(900_000) + 100_000:06d}"
+            user.otp = make_password(code)
+            user.otp_created_at = timezone.now()
+            user.otp_attempts = 0
+            user.save(update_fields=["otp", "otp_created_at", "otp_attempts"])
+
+            send_mail(
+                "Your Tiny Talks Phone Update Verification Code",
+                f"Hello {user.first_name},\n\nYour OTP code to update your phone number on Tiny Talks is: {code}\nThis code expires in 10 minutes.",
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            return Response({"message": f"Verification code sent to your registered email ({user.email})."}, status=status.HTTP_200_OK)
+
+        elif action == "change_password":
+            code = f"{secrets.randbelow(900_000) + 100_000:06d}"
+            user.otp = make_password(code)
+            user.otp_created_at = timezone.now()
+            user.otp_attempts = 0
+            user.save(update_fields=["otp", "otp_created_at", "otp_attempts"])
+
+            send_mail(
+                "Your Tiny Talks Password Change Verification Code",
+                f"Hello {user.first_name},\n\nYour OTP code to change your Tiny Talks account password is: {code}\nThis code expires in 10 minutes.",
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            return Response({"message": f"Verification code sent to your registered email ({user.email})."}, status=status.HTTP_200_OK)
+
+
+class SecurityVerifyApplyView(APIView):
+    """
+    Authenticated endpoint to verify OTP and apply requested security credential update.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        action = request.data.get("action")
+        otp = str(request.data.get("otp") or "").strip()
+        new_value = (request.data.get("new_value") or "").strip()
+
+        if not action or not otp or not new_value:
+            return Response({"error": "Action, OTP verification code, and new value are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+
+        if not user.verify_otp(otp):
+            return Response({"error": "Invalid or expired verification code. Please request a new code."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if action == "change_password":
+            try:
+                validate_password(new_value, user=user)
+            except DjangoValidationError as exc:
+                return Response({"error": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+            user.set_password(new_value)
+            user.clear_otp()
+            user.save(update_fields=["password"])
+            return Response({"message": "Password updated successfully! Please use your new password next time you log in."}, status=status.HTTP_200_OK)
+
+        elif action == "change_email":
+            if "@" not in new_value:
+                return Response({"error": "Invalid email address format."}, status=status.HTTP_400_BAD_REQUEST)
+            if User.objects.filter(email__iexact=new_value).exclude(pk=user.pk).exists():
+                return Response({"error": "This email address is already taken."}, status=status.HTTP_400_BAD_REQUEST)
+
+            user.email = new_value
+            user.clear_otp()
+            user.save(update_fields=["email"])
+            return Response({"message": "Email address updated successfully!", "new_email": new_value}, status=status.HTTP_200_OK)
+
+        elif action == "change_phone":
+            user.contact_number = new_value
+            user.clear_otp()
+            user.save(update_fields=["contact_number"])
+            return Response({"message": "Phone number updated successfully!", "new_phone": new_value}, status=status.HTTP_200_OK)
+
+        return Response({"error": "Unknown security action."}, status=status.HTTP_400_BAD_REQUEST)
+

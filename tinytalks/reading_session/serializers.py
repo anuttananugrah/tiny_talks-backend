@@ -37,6 +37,7 @@ class TeacherReadingStoryPageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReadingStoryPage
         fields = '__all__'
+        read_only_fields = ['story']
 
     def validate_image(self, value):
         return validate_image_upload(value)
@@ -45,6 +46,8 @@ class TeacherReadingStoryQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReadingQuestion
         fields = '__all__'
+        read_only_fields = ['story']
+
 
 class TeacherReadingStorySerializer(serializers.ModelSerializer):
     pages = TeacherReadingStoryPageSerializer(many=True, read_only=True)

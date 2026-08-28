@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from rest_framework.exceptions import AuthenticationFailed
-from user.models import User
+from user.models import User, Notification
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -107,4 +107,30 @@ class StudentListSerializer(serializers.ModelSerializer):
             'id', 'email', 'first_name', 'last_name',
             'contact_number', 'guardian_name', 'gender', 'dob',
             'profile_image', 'date_joined',
+        ]
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    is_read = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Notification
+        fields = [
+            'id', 'title', 'message', 'notification_type',
+            'teacher_name', 'link', 'is_read', 'created_at'
+        ]
+
+    def get_is_read(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.read_by.filter(id=request.user.id).exists()
+        return False
+
+
+class NotificationCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = [
+            'id', 'title', 'message', 'notification_type',
+            'teacher_name', 'link', 'created_at'
         ]

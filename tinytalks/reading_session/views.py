@@ -105,7 +105,23 @@ class TeacherStoryListCreateView(generics.ListCreateAPIView):
         return ReadingStory.objects.filter(teacher=self.request.user).order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(teacher=self.request.user)
+        instance = serializer.save(teacher=self.request.user)
+        try:
+            from user.models import Notification
+            teacher = (
+                f"{self.request.user.first_name} {self.request.user.last_name}".strip()
+                if self.request.user.is_authenticated else "Teacher"
+            )
+            Notification.objects.create(
+                title=f"📖 New Storybook: {instance.title}",
+                message=f"New storybook '{instance.title}' is available to read with fun pages and a quiz!",
+                notification_type="reading",
+                teacher_name=teacher or "Teacher",
+                link="/reading",
+                created_by=self.request.user if self.request.user.is_authenticated else None,
+            )
+        except Exception:
+            pass
 
 class TeacherStoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Teachers update/delete their own stories"""

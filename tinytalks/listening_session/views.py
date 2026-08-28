@@ -116,12 +116,30 @@ class SubmitQuizView(APIView):
 
 # --- 👩‍🏫 TEACHER DASHBOARD VIEWS ---
 
-# 1. Manage Videos
 class TeacherVideoListCreateView(generics.ListCreateAPIView):
     """React Dashboard: Upload new videos or list them."""
     queryset = StoryVideo.objects.all().order_by('-created_at')
     serializer_class = TeacherStoryVideoSerializer
     permission_classes = [IsTeacherOrStaffUser]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        try:
+            from user.models import Notification
+            teacher = (
+                f"{self.request.user.first_name} {self.request.user.last_name}".strip()
+                if self.request.user.is_authenticated else "Teacher"
+            )
+            Notification.objects.create(
+                title=f"🎧 New Listening Story: {instance.title}",
+                message=f"New story video '{instance.title}' has been uploaded with a quiz challenge!",
+                notification_type="listening",
+                teacher_name=teacher or "Teacher",
+                link="/listening",
+                created_by=self.request.user if self.request.user.is_authenticated else None,
+            )
+        except Exception:
+            pass
 
 class TeacherVideoDetailView(generics.RetrieveUpdateDestroyAPIView):
     """React Dashboard: Edit or delete a specific video."""
