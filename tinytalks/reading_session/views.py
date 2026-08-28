@@ -90,17 +90,15 @@ class StudentSubmitQuizView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+from user.views import IsTeacherOrStaffUser
+
 # ==============================================================
 # TEACHER DASHBOARD API ENDPOINTS
 # ==============================================================
 
-class TeacherBasePermission(IsAuthenticated):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and (request.user.role == "Teacher" or request.user.is_staff))
-
 class TeacherStoryListCreateView(generics.ListCreateAPIView):
     """Teachers list their own stories and create new ones"""
-    permission_classes = [TeacherBasePermission]
+    permission_classes = [IsTeacherOrStaffUser]
     serializer_class = TeacherReadingStorySerializer
 
     def get_queryset(self):
@@ -111,7 +109,7 @@ class TeacherStoryListCreateView(generics.ListCreateAPIView):
 
 class TeacherStoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Teachers update/delete their own stories"""
-    permission_classes = [TeacherBasePermission]
+    permission_classes = [IsTeacherOrStaffUser]
     serializer_class = TeacherReadingStorySerializer
 
     def get_queryset(self):
@@ -119,7 +117,7 @@ class TeacherStoryDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class TeacherStoryPageCreateView(generics.CreateAPIView):
     """Add a page to a specific story (must be owned by the teacher)"""
-    permission_classes = [TeacherBasePermission]
+    permission_classes = [IsTeacherOrStaffUser]
     serializer_class = TeacherReadingStoryPageSerializer
 
     def perform_create(self, serializer):
@@ -128,7 +126,7 @@ class TeacherStoryPageCreateView(generics.CreateAPIView):
 
 class TeacherStoryPageDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Update/delete a specific page (must belong to a story owned by the teacher)"""
-    permission_classes = [TeacherBasePermission]
+    permission_classes = [IsTeacherOrStaffUser]
     serializer_class = TeacherReadingStoryPageSerializer
 
     def get_queryset(self):
@@ -136,7 +134,7 @@ class TeacherStoryPageDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class TeacherStoryQuestionCreateView(generics.CreateAPIView):
     """Add a question to a specific story (must be owned by the teacher)"""
-    permission_classes = [TeacherBasePermission]
+    permission_classes = [IsTeacherOrStaffUser]
     serializer_class = TeacherReadingStoryQuestionSerializer
 
     def perform_create(self, serializer):
@@ -145,7 +143,7 @@ class TeacherStoryQuestionCreateView(generics.CreateAPIView):
 
 class TeacherStoryQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Update/delete a specific question (must belong to a story owned by the teacher)"""
-    permission_classes = [TeacherBasePermission]
+    permission_classes = [IsTeacherOrStaffUser]
     serializer_class = TeacherReadingStoryQuestionSerializer
 
     def get_queryset(self):
@@ -153,7 +151,7 @@ class TeacherStoryQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class TeacherQuizResultListView(generics.ListAPIView):
     """Teachers view results for their stories"""
-    permission_classes = [TeacherBasePermission]
+    permission_classes = [IsTeacherOrStaffUser]
     serializer_class = TeacherReadingQuizAttemptSerializer
 
     def get_queryset(self):

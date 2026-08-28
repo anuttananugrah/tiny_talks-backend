@@ -1,13 +1,10 @@
 from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from user.views import IsTeacherOrStaffUser
 from .models import LiveClass
 from .serializers import LiveClassSerializer
 
-# 🔒 Custom Permission: Only allow staff (teachers)
-class IsStaffUser(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
 
 class TodayLiveClassListView(generics.ListAPIView):
     """
@@ -38,10 +35,10 @@ class TeacherLiveClassListCreateView(generics.ListCreateAPIView):
     """Teacher endpoint to list all classes or create a new class."""
     queryset = LiveClass.objects.all().order_by('-created_at')
     serializer_class = LiveClassSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]
 
 class TeacherLiveClassDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Teacher endpoint to edit or delete a class."""
     queryset = LiveClass.objects.all()
     serializer_class = LiveClassSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]

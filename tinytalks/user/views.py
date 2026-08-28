@@ -168,15 +168,32 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
-class IsStaffUser(permissions.BasePermission):
+from django.contrib.auth.password_validation import validate_password
+from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+
+RESET_TOKEN_MAX_AGE = 900  # 15 minutes
+
+
+class IsTeacherOrStaffUser(permissions.BasePermission):
+    """
+    Allows access to users who are authenticated and either have role='Teacher' or is_staff=True.
+    """
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and (
+                getattr(request.user, "is_staff", False)
+                or getattr(request.user, "role", "") == "Teacher"
+            )
+        )
+
 
 class TeacherStudentListView(generics.ListAPIView):
     """React Dashboard: See all registered students."""
     queryset = User.objects.filter(is_staff=False).order_by('-date_joined')
     serializer_class = StudentListSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]
 
 
 class ForgotPasswordView(APIView):
@@ -212,7 +229,16 @@ class VerifyResetOTPView(APIView):
         try:
             user = User.objects.get(email=email)
             if user.verify_otp(otp):
-                return Response({"message": "OTP verified successfully."}, status=status.HTTP_200_OK)
+                user.clear_otp()
+                signer = TimestampSigner(salt="tinytalks.password_reset")
+                reset_token = signer.sign(user.email)
+                return Response(
+                    {
+                        "message": "OTP verified successfully.",
+                        "reset_token": reset_token,
+                    },
+                    status=status.HTTP_200_OK,
+                )
             else:
                 return Response({"error": "Invalid OTP. Please try again."}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
@@ -226,29 +252,46 @@ class ResetPasswordView(APIView):
 
     def post(self, request):
         email = request.data.get("email")
+        token = request.data.get("token") or request.data.get("reset_token")
         otp = request.data.get("otp")
         new_password = request.data.get("password")
         confirm_password = request.data.get("confirm_password")
 
-        if not all([email, otp, new_password, confirm_password]):
-            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not (token or (email and otp)):
+            return Response({"error": "Reset token or email and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not new_password or not confirm_password:
+            return Response({"error": "Password and confirmation are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         if new_password != confirm_password:
             return Response({"error": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
 
+        user = None
+        if token:
+            signer = TimestampSigner(salt="tinytalks.password_reset")
+            try:
+                token_email = signer.unsign(token, max_age=RESET_TOKEN_MAX_AGE)
+                if email and token_email.lower() != email.lower():
+                    return Response({"error": "Invalid or mismatched reset token."}, status=status.HTTP_400_BAD_REQUEST)
+                user = User.objects.get(email=token_email)
+            except (BadSignature, SignatureExpired):
+                return Response({"error": "Reset session has expired or is invalid. Please request a new code."}, status=status.HTTP_400_BAD_REQUEST)
+            except User.DoesNotExist:
+                return Response({"error": "User does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            try:
+                user = User.objects.get(email=email)
+                if not user.verify_otp(otp):
+                    return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+            except User.DoesNotExist:
+                return Response({"error": "Invalid OTP or email."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            user = User.objects.get(email=email)
-            if user.verify_otp(otp):
-                from django.contrib.auth.password_validation import validate_password
-                try:
-                    validate_password(new_password, user=user)
-                except DjangoValidationError as exc:
-                    return Response({"error": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
-                user.set_password(new_password)
-                user.save(update_fields=["password"])
-                user.clear_otp()
-                return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
-            else:
-                return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
-        except User.DoesNotExist:
-            return Response({"error": "Invalid OTP or email."}, status=status.HTTP_400_BAD_REQUEST)
+            validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            return Response({"error": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        user.clear_otp()
+        return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)

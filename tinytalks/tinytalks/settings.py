@@ -76,9 +76,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-# This allows all Vercel preview URLs automatically
+# Allow specific project Vercel deployments and preview URLs
 CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https:\/\/.*\.vercel\.app$",
+    r"^https:\/\/tiny-talks[a-zA-Z0-9_-]*\.vercel\.app$",
 ]
 
 CSRF_TRUSTED_ORIGINS = []
@@ -87,8 +87,17 @@ if FRONTEND_URL:
     CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
-    "DEFAULT_THROTTLE_RATES": {"login": "10/minute", "otp": "5/minute", "password_reset": "5/hour"},
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/minute",
+        "otp": "5/minute",
+        "password_reset": "5/hour",
+    },
 }
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30), "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
@@ -96,16 +105,23 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# Anymail Brevo Configuration
-EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
-
-ANYMAIL = {
-    "BREVO_API_KEY": config("BREVO_API_KEY", default=""),
-}
+if DEBUG:
+    # 1. LOCAL DEVELOPMENT: Use standard SMTP from your .env
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = config("EMAIL_HOST", default="smtp.gmail.com")
+    EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+    EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+    EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+    EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+else:
+    # 2. RENDER PRODUCTION: Use Brevo Anymail API
+    EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+    ANYMAIL = {
+        "BREVO_API_KEY": config("BREVO_API_KEY", default=""),
+    }
 
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="tinytalksbysona@gmail.com")
 SERVER_EMAIL = config("SERVER_EMAIL", default="tinytalksbysona@gmail.com")
-
 CLOUDINARY_STORAGE = {
     "CLOUD_NAME": config("CLOUDINARY_CLOUD_NAME"), "API_KEY": config("CLOUDINARY_API_KEY"),
     "API_SECRET": config("CLOUDINARY_API_SECRET"),

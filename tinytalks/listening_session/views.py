@@ -1,9 +1,14 @@
-from rest_framework import generics, status, permissions
+from django.db import IntegrityError
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.utils import timezone
-from .models import StoryVideo, StoryQuestion, QuizAttempt, UserAnswer
+from user.views import IsTeacherOrStaffUser
+
 from listening_session.serializers import *
+from .models import QuizAttempt, StoryQuestion, StoryVideo, UserAnswer
+
 
 class StoryVideoListView(generics.ListAPIView):
     """
@@ -40,20 +45,23 @@ class SubmitQuizView(APIView):
             )
 
         # 2. Fetch the video
-        try:
-            video = StoryVideo.objects.get(id=video_id)
-        except StoryVideo.DoesNotExist:
-            return Response({"detail": "Video not found."}, status=status.HTTP_404_NOT_FOUND)
+        video = get_object_or_404(StoryVideo, id=video_id)
 
         # Expected frontend data format: {"answers": [{"question_id": 1, "selected_option": 2}, ...]}
         submitted_answers = request.data.get('answers', [])
         
         # 3. Create the attempt record (Score starts at 0, updated later)
-        attempt = QuizAttempt.objects.create(
-            user=user,
-            video=video,
-            score=0 
-        )
+        try:
+            attempt = QuizAttempt.objects.create(
+                user=user,
+                video=video,
+                score=0 
+            )
+        except IntegrityError:
+            return Response(
+                {"detail": "You have already completed this story's quiz today. Great job! Come back tomorrow."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         score = 0
         answer_records = []
@@ -106,11 +114,6 @@ class SubmitQuizView(APIView):
             "results": feedback_results 
         }, status=status.HTTP_201_CREATED)
 
-# Make sure your IsStaffUser permission from live_session is imported or recreated here
-class IsStaffUser(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
-
 # --- 👩‍🏫 TEACHER DASHBOARD VIEWS ---
 
 # 1. Manage Videos
@@ -118,32 +121,32 @@ class TeacherVideoListCreateView(generics.ListCreateAPIView):
     """React Dashboard: Upload new videos or list them."""
     queryset = StoryVideo.objects.all().order_by('-created_at')
     serializer_class = TeacherStoryVideoSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]
 
 class TeacherVideoDetailView(generics.RetrieveUpdateDestroyAPIView):
     """React Dashboard: Edit or delete a specific video."""
     queryset = StoryVideo.objects.all()
     serializer_class = TeacherStoryVideoSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]
 
 # 2. Manage Questions
 class TeacherQuestionListCreateView(generics.ListCreateAPIView):
     """React Dashboard: Add a question to a specific video."""
     serializer_class = TeacherStoryQuestionSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]
 
     def get_queryset(self):
         return StoryQuestion.objects.filter(video_id=self.kwargs['video_id'])
 
     def perform_create(self, serializer):
-        video = StoryVideo.objects.get(id=self.kwargs['video_id'])
+        video = get_object_or_404(StoryVideo, id=self.kwargs['video_id'])
         serializer.save(video=video)
 
 class TeacherQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     """React Dashboard: Edit or delete a specific question."""
     queryset = StoryQuestion.objects.all()
     serializer_class = TeacherStoryQuestionSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]
 
 # 3. View Student Results
 class TeacherQuizResultListView(generics.ListAPIView):
@@ -155,7 +158,7 @@ class TeacherQuizResultListView(generics.ListAPIView):
         .order_by('-created_at')
     )
     serializer_class = TeacherQuizAttemptSerializer
-    permission_classes = [IsStaffUser]
+    permission_classes = [IsTeacherOrStaffUser]
 
     def get_queryset(self):
         queryset = super().get_queryset()
